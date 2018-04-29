@@ -1,0 +1,417 @@
+---
+title: "Data Incubator - Hipster Music Taste"
+author: "Lauren Hopkins"
+date: "4/21/2018"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: journal
+    colortheme: dolphin
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## INTRODUCTION
+### IF MUSIC BE THE FOOD OF LOVE, CODE ON
+Everyone loves music unless they're a sociopath. This includes me. I'm interested in both the music industry and the social media industry and how user-interaction can make music services more lucrative. I'm in a prime position to do this as I'm a huge music connoisseur; I curate my own playlists, I search for new artists regularly, and I troll release dates like it's going out of style. I'm also a self-centered millenial so of course I love analyzing my own music taste, asking questions like, "What's my favorite genre of music" and "What other bands sound like [White Lung](https://www.youtube.com/watch?v=VTbiAuqewBA) that I should listen to immediately?" The current generation doesn't just want to listen to music, they want to INTERACT with their music.
+
+Like every millenial (and my dad) I'm pretty much obsessed with **Spotify**. Streaming services are the future of music and a perfect place for data scientists. However, these services can't expect to simply provide music streaming if they want to stay current; therefore, streaming services are constantly looking for ways to A) Get more users and B) Keep users interested because more listening equals more ads. 
+
+Spotify's "Discover Weekly" playlist is one example of how streaming services are thinking outside the box. Discovery Weekly is a playlist automatically generated for its users every Monday and includes bands you've never listened to but which Spotify thinks you might like based on past listening patterns. It's insanely sucessful, [reaching over 40 millions users who streamed over 5 billion tracks in it's first 10 months](https://www.fastcompany.com/3062540/spotifys-release-radar-is-like-discover-weekly-for-new-music-and-just-as-good). The playlist is usually great but recommendations are usually based on other users' activity. Given the success of recommendation playlists I think it would be valuable to create a musical analysis system that gives user different kinds of recommendations as well as well as other ways to interact with their music data. That's where I come in.
+
+###THE PROJECT
+I would like to create a music analysis and novel user-driven recommendation system. The music analysis will provide "fun" information about a user's musical tastes. More specifically, given any playlist I will provide metrics about different aspects of your music tastes (i.e. how *fun* your playlist is) and will also compare it to popular music to give a measure of **Hipsterness** (i.e. how similar are your music tastes to popular playlists). Following this, I'd like to build my own recommendation system based on metrics that most systems (including Spotify's) don't take into account, like lyrical content. I can interface the Spotify API with the [LastFM API](https://www.last.fm/api) which is a "scrobbing service" that keeps tracks of music listening history. Through this linkage I can use machine learning to create playlist based on lyrical content AS WELL as scrobbing/listening history. Optimally we'd be able to make personalized playlist curated to a user's listening history throughout the day. We can make a breakfast playlist, a work playlist, and a nighttime playlist. 
+
+The learning experience will be robust because it will allow me to learn and implement different types of machine learning, text mining, and so much more. At an industry-level, this would be a huge deal for streaming services. [People go nuts over Discovery Weekly](http://www.adweek.com/digital/even-spotify-surprised-huge-success-its-discover-weekly-playlists-173129/) and if users have a chance to generate other individualized playlists based on different factors, the popularity of the streaming systems will explode. Plus I'll be able to find new music and show people sweet iconographs about my favorite topic: My own music taste.
+
+###DATA SOURCES
+I'm grabbing data from a lot of different sources for this project. 
+
+  1. The main data comes directly from Spotify via the [Spotify Web API](https://developer.spotify.com/web-api/) which means I'm scrubbing my own data for this project. For the time being I'm just scrubbing my own music so no one else has it, which is pretty rad. The information extracted is available as part of the [Spotify API Endpoints](https://beta.developer.spotify.com/documentation/web-api/reference/) and include track metrics (i.e. loudness), artist URI and name, track plays, album release data and popularity, and so much more.
+  2. Part of this project will involve lyrical analysis and recommendations based on lyrical content. Lyrical information comes from [Genius](https://genius.com/) which is one of the most popular song lyrics website available. However, something I've found in my exploratory analyses is that (obviously) Genius does not have every song's lyrics in its corpus. If possible, I will try integrating other websites like [AZLyrics](https://www.azlyrics.com/) which  basically means I'd have to try to make a new package for interfacing with AZLyrics. Am I willing to try this? You bet.
+  3. Finally, we going to need the [LastFM API](https://www.last.fm/api) for music history information since Spotify doesn't provide it. I have not interfaced with Last FM yet because I don't have an account but can link that up in a jiffy.
+
+###DISCLAIMER
+This entire proposal is all me hacking my way through trying to present something cool to you for the challenge so you'll let me into the Incubator so I can formally learn how to make this less stupid. Forgive the inelegance of everything; this is all done within like, a handful of hours over the course of two days. Two days of reading webpages nonstop trying to figure out how to make this work.
+
+##STEP 0: GETTING STARTED
+###WHEREIN I ALREADY DID A LOT OF THE LEGWORK FOR YOU
+
+```{r library setup, include=FALSE}
+#Libraries
+library(rJava)
+library(xlsx)
+library(dplyr)
+library(ggplot2)
+library(statsr)
+library(data.table)
+library(jsonlite)
+library(geniusR)
+library(stringdist)
+library(spotifyr)
+library(kableExtra)
+library(formattable)
+library(httr)
+library(tidytext)
+library(psych)
+library(devtools)
+library(tibble)
+library(Rspotify)
+library(network)
+library(igraph)
+library(tidygraph)
+library(visNetwork)
+library(networkD3)
+library(plyr)
+library(purrr)
+library(tm)
+library(wordcloud)
+```
+
+Thank God I'm a Spotify Premium User, so I already did all the behind-the-scenes prep in that regard. What does that mean? Well, Spotify has this amazing API that let's you download information about any song/artist/playlist if you sign up as a Developer on their website. Which I did. Obviously. Another setup aspect of this is for the lyrics. I'm going to be doing lyrical analyses and using song lyrics as predictors for my recommendations. The R Package I'm using to analyze the Spotify metrics is an amazing little package called `spotifyr` which is good for most things but doesn't allow me to grab lyrics from playlists. No problem. I downloaded another package called `geniusr` that uses the lyric website [Genius](https://genius.com/) to grab song lyrics. To use this package you have to sign up as a Dev on the Genius website and get more access codes. Don't worry, I took care of that for you too. ;)
+```{r spotifyr authorize}
+#You get a Client ID and "Secret Code" when you sign up as a developer that lets you get the song metrics. Anyone can substitute their own credentials here.
+YOUR_CLIENT_ID <- "7e6034f0951245dd9710d5e856115a41"
+YOUR_CLIENT_SECRET <- "19f662dee72b42ddaf8b0a725358badc"
+
+Sys.setenv(SPOTIFY_CLIENT_ID = YOUR_CLIENT_ID)
+Sys.setenv(SPOTIFY_CLIENT_SECRET = YOUR_CLIENT_SECRET)
+mytoken = get_spotify_access_token()
+
+#In order to access someone's music information, including their playlists, they have to get AUTHORIZATION from that user to access their data. Once you have authorization, just input their username below and all their playlists can be accessed.
+username <- "t5j0d5d0wv69bmkdifvgjvlb8"
+playlists <- get_user_playlists(username)
+```
+
+## GOAL 1: GET PLAYLIST METRICS
+### HOW LOUD IS THAT LADY GAGA TRIBUTE PLAYLIST ANYWAY?
+
+After signing as a Spotify Dev, you can use their API to download song information. This information includes a lot of important stuff like *tempo* and *key* but what's ultra cool here are the SUBJECTIVE METRICS it includes. These are:
+
+  + <span style="color:purple">**ACOUSTICNESS**</span> : A confidence measure from 0.0 to 1.0 of whether the track is acoustic. 1.0 represents high confidence the track is acoustic.
+  + <span style="color:purple">**DANCEABILITY**</span> : Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity. A value of 0.0 is least danceable and 1.0 is most danceable.
+  + <span style="color:purple">**ENERGY**</span> : float	Energy is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity. Typically, energetic tracks feel fast, loud, and noisy. For example, death metal has high energy, while a Bach prelude scores low on the scale. Perceptual features contributing to this attribute include dynamic range, perceived loudness, timbre, onset rate, and general entropy.
+  + <span style="color:purple">**INSTRUMENTALNESS**</span> : Predicts whether a track contains no vocals. “Ooh” and “aah” sounds are treated as instrumental in this context. Rap or spoken word tracks are clearly “vocal”. The closer the instrumentalness value is to 1.0, the greater likelihood the track contains no vocal content. Values above 0.5 are intended to represent instrumental tracks, but confidence is higher as the value approaches 1.0.
+  + <span style="color:purple">**LIVELINESS**</span> : Detects the presence of an audience in the recording. Higher liveness values represent an increased probability that the track was performed live. A value above 0.8 provides strong likelihood that the track is live.
+  + <span style="color:purple">**SPEECHINESS**</span> : Speechiness detects the presence of spoken words in a track. The more exclusively speech-like the recording (e.g. talk show, audio book, poetry), the closer to 1.0 the attribute value. Values above 0.66 describe tracks that are probably made entirely of spoken words. Values between 0.33 and 0.66 describe tracks that may contain both music and speech, either in sections or layered, including such cases as rap music. Values below 0.33 most likely represent music and other non-speech-like tracks.
+  + <span style="color:purple">**VALENCE**</span> : A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track. Tracks with high valence sound more positive (e.g. happy, cheerful, euphoric), while tracks with low valence sound more negative (e.g. sad, depressed, angry).
+  
+Since **Goal 1** is to give you an analysis of your own music tastes my exploratory data analysis and graphs for the challenge will be here. So given any playlist, let's get their metrics.
+
+Every year I curate playlists for myself. For the challenge I'm using a playlist I made for my favorite music from 2017. It has over 200 songs so it should be a good representation of my 2017 tastes.
+```{r get data}
+#You can get informations about any playlists outputted into the playlist variable above or you can specify your own via the playlist's URI.
+#The playlist I'm using as an example is #8 in the list
+playlist_uris <- playlists$playlist_uri[9]
+USER_playlist_features <- get_playlist_audio_features(username, playlist_uris, mytoken, show_progress = TRUE)
+
+#Make a matrix with just the metrics
+cols <- c("danceability", "energy", "speechiness", "acousticness", "instrumentalness", "liveness", "valence")
+USER_metrics.df <- USER_playlist_features[cols]
+```
+
+Now it's just a matter of what you want to show the user! Obviously first we should appraise them of the average metrics of their playlist.
+
+```{r avg metrics}
+options(knitr.table.format = "html")
+
+USER_average_metrics <- rbind(colMeans(USER_metrics.df[sapply(USER_metrics.df, is.numeric)]), apply(USER_metrics.df, 2, sd))
+
+#Make table looks nice
+row.names(USER_average_metrics) <- c("Average", "SD")
+colnames(USER_average_metrics) <- c("Danceability", "Energy", "Speechiness", "Acousticness", "Instrumentalness", "Liveness", "Valence")
+ 
+kable(USER_average_metrics, "html", align = "c") %>% kable_styling(full_width = F) %>% footnote(general = "All variables defined as follows", alphabet = c("Danceability: 0 = Not danceable, 1 = Super danceable", "Energy: 0 = Classical, 1 = Death Metal ", "Speechiness: > .66 = Spoken word, < .33 = Few/No spoken words", "Acousticness: 0 = Probably not acoustic, 1 = Probably Acoustic", "Instrumentalness: 0 = Instrumental, 1 = Lots of vocals (i.e. Rap)", "Liveness: > .8 = Probably Live", "Valence: 0 = Sad, 1 = Happy"))
+```
+Alright! It looks like this user (i.e. me) was really into high energy tracks in 2017 (hint: I listened to A LOT of punk music). What do all their songs looks like?
+
+```{r graphs}
+pairs.panels(USER_metrics.df, smoother=TRUE)
+```
+Sweet. We can see the high prevalence in high `energy` tracks in the 'energy' histogram. It seems like the average values for `danceability` and `valence` are due to a seemingly normal distribution of high and low danciness tracks and a normal distribution of sad to happy tracks (hint. I have moods). We can also see interesting correlations: The more danceable a track, the happier it is but the more danceable the track, the lower energy it is (whatever, punk is super danceable).
+
+We can also right away start giving them new artist to consider looking at by analyzing "Related Artists" to those they have in their playlist. For demonstrative purposes I'll keep it to the Top 3 Related Artists to every playlist artist to make visualization easier, but it can be done with any number.
+```{r eat related artists, include=FALSE}
+
+keys <- spotifyOAuth("app_id",YOUR_CLIENT_ID,YOUR_CLIENT_SECRET)
+user.playlist <- getPlaylist(username,token=keys)
+topsongs <- getPlaylistSongs(user.playlist$ownerid[16],user.playlist$id[16],token=keys)
+
+source <- tibble(label = character())
+destination <- tibble(label = character())
+
+for (row in 1:nrow(topsongs)) {
+  related <- getRelated(topsongs$artist[row], token=keys)
+  if (length(related) == 0) next
+  #Convert factors from related
+  i <- sapply(related, is.factor)
+  related[i] <- lapply(related[i], as.character)
+  artist <- topsongs$artist[row]
+
+#Get top 3 related artists for ease of viewing
+      for (row2 in 1:3) {
+      source <- rbind(source, artist, stringsAsFactors = FALSE)
+      destination <- rbind(destination, related$name[row2], stringsAsFactors = FALSE)
+    }
+}
+```
+
+My next graph shows, what I think to be one of the coolest ways to visualize Related Artist data: Via a Network graph.
+```{r make edges, include=FALSE}
+#Get each unique band included and assign it an ID
+colnames(source) <- "label"
+colnames(destination) <- "label"
+original_combos <- cbind(source = source, destination = destination)
+colnames(original_combos) <-c("source", "destination")
+nodes <- rbind(source, destination)
+nodes <- unique(nodes)
+nodes <- nodes %>% rowid_to_column("id")
+
+#Create edges and give them weights
+#Assign weights first
+get_weights <- original_combos %>% group_by(source, destination) %>% dplyr::summarise(weight = n()) %>% ungroup #dplyr:: prevents conflicts with plyr
+
+#Find central band
+x <- original_combos %>% group_by(source, destination)
+y <- unique(x)
+z <- data.frame(z=unlist(y))
+total_connections <- z %>% group_by(z) %>% dplyr::summarise(total = n())
+#Color
+cols <- data.frame(color = rep("blue", nrow(nodes)), stringsAsFactors = F)
+max_row <- total_connections %>% slice(which.max(total))
+label_max_row <- subset(nodes, grepl(max_row$z, label))
+cols$color[label_max_row$id] <- "red"
+nodes_vis <- data.frame(nodes, color.background = cols)
+
+edges <- get_weights %>% left_join(nodes, by=c("source" = "label")) %>% dplyr::rename(from = id)
+edges <- edges %>% left_join(nodes, by = c("destination" = "label")) %>% dplyr::rename(to = id)
+edges <- dplyr::select(edges, from, to, weight)
+```
+
+This is a very simple graph because it's interactive. I'm doing this on purpose to show the user some qualities of the data. For this user (i.e. some jerk named me) we can see this is not a great network. Like, at all. This dude apparently likes to listen to pretty disparate artists which you can pretty clearly see from the zoomed out version of the graph - All artists are related to their 3 "Related Artists" (duh) and for the most part make up their own "small worlds" within this playlist. They don't really link up to other artists. This is a weakness of the particular dataset only, not the method. You can zoom in, though, which is why simplicity is key here. Right-click or use double fingers (Mac) to zoom into any part of the network you want to see. For the user we highlight the node with the maximum number of connections (both in and out) so we can see, in this example, No Frills Twins is the most central node in this network. 
+
+Top Howevermany Lists will probably have better structure because there will be more instances of artists appearing multiple times and artists will probably be more similar (i.e. mostly pop songs or whatever) so their "Related Artists" will overlap. This person is clearly just a hipster.
+```{r create network objects, echo=FALSE}
+
+#Network object
+related_network <- network(edges, vertex.attr = nodes, matrix.type = "edgelist", ignore.eval = FALSE)
+#igraph object
+net <- graph_from_data_frame(d=edges, vertices=nodes, directed=T)
+#visNetwork(nodes_vis, edges)
+visNetwork(nodes_vis, edges) %>% 
+  visIgraphLayout(layout = "layout_with_fr") %>% 
+  visEdges(arrows = "middle")
+  
+```
+
+Finally, for the preview, since part of the analyses I want to do are on the lyrical content of the playlists, I have to get the actual lyrics of the songs in addition to the above metrics. The problem with the `spotifyr` is that it doesn't let you get lyrics of individual songs or of songs in playlists so we have to use a function in the package `geniusr` to do that. The problem with doing THAT is that `geniusr` ALSO doesn't let you get lyrics by playlist (these packages operate on artist, album, or nothing) so this is where it gets hacky. Here I used a `geniusr` function to search for each song's lyrics individually and stuck the lyrics (with song title and artist) into their own list. Obviously some songs won't have their lyrics on **Genius**. When I eventually hook up to **LastFM** this will help.
+
+```{r test artson, message=FALSE, warning=FALSE, include=FALSE}
+
+USER_playlist_artists <- data.frame(USER_playlist_features$artist_name, stringsAsFactors = FALSE)
+names(USER_playlist_artists) <- c("artists")
+USER_playlist_songs <- data.frame(USER_playlist_features$track_name, stringsAsFactors = FALSE)
+names(USER_playlist_songs) <- c("songs")
+```
+
+```{r lyrics, message=FALSE, warning=FALSE, include=FALSE}
+library(geniusR)
+
+playlist_lyrics <- data.frame(TRACK = character(), ARTIST = character(), LYRICS = character())
+
+for (row in 1:nrow(USER_playlist_artists)) {
+  #If lyrics not found
+  lyrics <- tryCatch(genius_lyrics(artist = USER_playlist_artists$artists[row], song = USER_playlist_songs$songs[row]), error = function(err) NA)
+  if (!is.na(lyrics)) {
+    lyrics <- paste(unlist(lyrics$lyric), collapse =" ")
+  }
+  new_row <- data.frame(TRACK=USER_playlist_artists$artists[row], ARTIST=USER_playlist_songs$songs[row], LYRICS=lyrics)
+  playlist_lyrics <- rbind(playlist_lyrics, new_row)
+
+}
+```
+So the final graph of this project is to give users a sense of what their favorite playlist says about them, lyrically. Are you really inti **Love** or **Cash**? Stick with me though, I know there are a lot of ways to visualize this data but the most fun "*graph*" by far is a Word Cloud and yes, that's a graph. You ever seen a lyric estimation histogram on Facebook? Didn't think so.
+
+I guess this weirdo apparently likes..."like." Wow. That's some valley girl stuff right there. And you said you were punk.
+(Sidenote: Sorry not sorry for the swears I love trap music)
+```{r lyric prep, echo=FALSE}
+library(tm)
+
+lyric_corpus <- VCorpus(VectorSource(playlist_lyrics$LYRICS))
+#Standardize messages via lowercasing everything
+lyric_corpus_clean <- tm_map(lyric_corpus, content_transformer(tolower))
+#Remove numbers
+lyric_corpus_clean <- tm_map(lyric_corpus_clean, removeNumbers)
+#Remove stop words
+lyric_corpus_clean <- tm_map(lyric_corpus_clean, removeWords, stopwords())
+#Making my own stopwords after reviewing data
+lyric_corpus_clean <- tm_map(lyric_corpus_clean, removeWords, c("get", "make", "just", "take", "put"))
+#Remove punctuation
+lyric_corpus_clean <- tm_map(lyric_corpus_clean, removePunctuation)
+#Stemming
+#lyric_corpus_clean <- tm_map(lyric_corpus_clean, stemDocument)
+#Strip whitespace
+lyric_corpus_clean <- tm_map(lyric_corpus_clean, stripWhitespace)
+
+dtm <- TermDocumentMatrix(lyric_corpus_clean)
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+wordcloud(words = d$word, freq = d$freq, min.freq = 20, scale = c(4, 0.2),
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+
+
+```{r genres, eval=FALSE, include=FALSE}
+playlist_genres <- data.frame(TRACK = character(), ARTIST = character(), GENRE = list())
+all_artist_genres <- list()
+for (row in 1:nrow(USER_playlist_artists)) {
+  #Get song genres from their artists
+  origName <- USER_playlist_artists$artists[row]
+  artist_audio_features <- tryCatch(get_artist_audio_features(origName), error = function(err) NA)
+  genre_store <- "xx"
+  
+  if (length(artist_audio_features) != 1) {
+
+    URI = paste0('https://api.spotify.com/v1/artists?ids=', artist_audio_features$artist_uri[1])
+    mytoken = get_spotify_access_token()
+    HeaderValue = paste0('Bearer ', mytoken)
+    response2 = GET(url = URI, add_headers(Authorization = HeaderValue))
+    Artist = httr::content(response2)
+    genre_list <- Artist$artists[[1]]$genres
+    
+    genre_store <- paste(unlist(Artist$artists[[1]]$genres), collapse = " ")
+  }
+    new_row <- data.frame(TRACK=USER_playlist_songs$songs[row], ARTIST=USER_playlist_artists$artist[row], GENRE=genre_store)
+    playlist_genres <- rbind(playlist_genres, new_row)
+}
+```
+
+For this analysis I'm also pulling genre information so that can potentially be used for fun metrics or recommendations later on.
+```{r try genre different, include=FALSE}
+#Get artist uids
+get_artist_ids <- function(artist) {
+  USER_artists_with_id <- get_artists(artist, return_closest_artist = TRUE, access_token = mytoken)
+  #return USER_artists_with_id
+}
+
+artists_id_info <- purrr::map_df(USER_playlist_artists$artists, get_artist_ids)
+```
+However Spotify genre information is crap (i.e. it includes like 9 per artist and is stuff like 'minimalist bohemial') so I'm condensing genre listings into main categories for the sake of viewing here. 
+```{r get genre, include=FALSE}
+#Get artist genres
+get_and_wait <- function(artist, keys) {
+  info <- getArtistinfo(artist, token = keys)
+#  if(!is.null(info)){
+#    info <- info[1,]
+#  }
+#  info$first_artist <- artist
+#  info
+}
+artists_genre_info <- purrr::map_df(artists_id_info$artist_uri, get_and_wait, keys)
+#Remove bull genres
+main_genres <- c("hip hop", "pop", "country", "latin", "dance", "rock", "classical", "jazz", "indie", "folk", "metal", "reggae", "punk")
+
+artist_main_genres <- artists_genre_info %>% tidytext::unnest_tokens(genres,genres,stringr::str_extract_all,pattern=glue::collapse(main_genres,"|")) %>% unique %>% `rownames<-`(NULL)
+```
+And apparently although I say I like punk I'm a big liar who loves pop divas instead. You got me.
+Users will love this information for sure but it will also be useful for eventual recommendations.
+```{r graph genre data}
+summary_genres <- artist_main_genres %>% group_by(genres) %>% dplyr::summarise(num_genres = n()) %>% ungroup
+ggplot(data=summary_genres, aes(x=genres, y=num_genres, fill=genres)) + geom_bar(stat="identity") + scale_fill_hue(name="Primary Genre") + xlab("Genre Name") + ylab("Track Amount") + ggtitle("Main Genre Distribution") + theme_bw()
+```
+
+```{r genre picking, eval=FALSE, include=FALSE}
+split_the_genres <- function(genres){
+  genres <- stringr::str_split(genres, ",")
+}
+
+artists_genre_info <- dplyr::filter(artists_genre_info, !is.na(genres))
+artists_genre_info <- dplyr::mutate(artists_genre_info, genre = split_the_genres(genres))
+artists_genre_info <- tidyr::unnest(artists_genre_info, genre)
+artists_genre_info <- dplyr::mutate(artists_genre_info, value = TRUE)
+artists_genre_info <- tidyr::spread(unique(artists_genre_info), genre, value, fill = FALSE)
+
+sum_or_not <- function(x){
+  if(is.logical(x)){
+    sum(x) > 10
+  }else{
+    TRUE
+  }
+}
+variables_info <- dplyr::summarise_all(artists_genre_info, sum_or_not)
+artists_genre_final <- artists_genre_info[,as.logical(t(variables_info))]
+
+```
+
+```{r cluster, eval=FALSE, include=FALSE}
+set.seed(1)
+clustering <- klaR::kmodes(artists_genre_final[, 6:ncol(artists_genre_final)], modes = 6)
+clustering$size
+artists_genre_final$cluster <- clustering$cluster
+
+```
+
+## GOAL 2: COMPARE YOUR METRICS TO POPULAR MUSIC METRICS
+### THE WORLD'S MOST WANTED TO KNOW INFORMATION: HOW HIPSTER ARE YOU?
+
+I'm not sure if I'll finish this in time for the challenge but step 2 is to compare your music taste to the taste of the public. Everyone knows the measure of hipsterness isn't what kind of craft beer you drink or how long your beard is - it's how dissimilar your music taste is to the common plebe's. "I liked Imagine Dragons before they got big" and all that.
+
+```{r get billboard features, include=FALSE}
+#Get it for the Billboard playlist
+playlist_uris <- playlists$playlist_uri[1]
+#mytoken <- get_spotify_access_token(client_id = Sys.getenv(YOUR_CLIENT_ID), client_secret = Sys.getenv(YOUR_CLIENT_SECRET))
+BILLBOARD_playlist_features <- get_playlist_audio_features(username, playlist_uris, access_token = mytoken, show_progress = TRUE)
+BILLBOARD_valence <- BILLBOARD_playlist_features$valence
+
+#Make a matrix with just the metrics
+cols <- c("danceability", "energy", "speechiness", "acousticness", "instrumentalness", "liveness", "valence")
+BILLBOARD_metrics.df <- BILLBOARD_playlist_features[cols]
+options(knitr.table.format = "html")
+
+BILLBOARD_average_metrics <- rbind(colMeans(BILLBOARD_metrics.df[sapply(BILLBOARD_metrics.df, is.numeric)]), apply(BILLBOARD_metrics.df, 2, sd))
+
+#Make table looks nice
+row.names(BILLBOARD_average_metrics) <- c("Average", "SD")
+colnames(BILLBOARD_average_metrics) <- c("Danceability", "Energy", "Speechiness", "Acousticness", "Instrumentalness", "Liveness", "Valence")
+
+kable(BILLBOARD_average_metrics, "html", align = "c") %>% kable_styling(full_width = F) %>% footnote(general = "All variables defined as follows", alphabet = c("Danceability: 0 = Not danceable, 1 = Super danceable", "Energy: 0 = Classical, 1 = Death Metal ", "Speechiness: > .66 = Spoken word, < .33 = Few/No spoken words", "Acousticness: 0 = Probably not acoustic, 1 = Probably Acoustic", "Instrumentalness: 0 = Instrumental, 1 = Lots of vocals (i.e. Rap)", "Liveness: > .8 = Probably Live", "Valence: 0 = Sad, 1 = Happy"))
+
+```
+
+```{r comparison graphs}
+comparison.df <- rbind(USER_metrics.df, BILLBOARD_metrics.df)
+groups <- c("YOU", "POPULAR")
+comparison.df <- dplyr::mutate(comparison.df, group = rep(groups, c(nrow(USER_metrics.df), nrow(BILLBOARD_metrics.df))))
+avgs <- ddply(comparison.df, "group", numcolwise(mean))
+#Graph
+ds <- melt(comparison.df, id = 8, measure = 1:7)
+avg_ds <- melt(avgs, id = 1, measure = 2:8)
+
+ggplot(ds, aes(x=value, y = ..scaled.., fill=group)) + geom_histogram(aes(y=..density..), colour = "black", lwd = 1, binwidth = .1, alpha=.6, position="identity", lwd=.2) + facet_wrap(~ variable, scales = "free_y") + geom_vline(data=avg_ds, aes(xintercept=value, colour = group, lwd = 1), linetype="dashed", size=1) + geom_density(aes(y=..scaled.., colour = group), alpha=0, lwd=2) + theme_bw() + scale_colour_brewer(palette = "Accent") + scale_fill_brewer(palette = "Accent") + ylab("Scaled Density") + xlab("Value 0-1")
+```
+
+If we look specifically at **energy**, for example, we can see the user is listening to higher energy songs than what the kids are listening to these days. This makes sense because there's rarely a lot of metal or punk on the charts but from above we know our user's playlist has at least 25 high energy metal & punk tracks in it.
+```{r energy}
+
+ggplot(data=comparison.df, aes(x=energy, fill=group)) + geom_histogram(aes(y=..density..), colour = "black", binwidth = .1, alpha=.6, position="identity", lwd=.2) + geom_density(aes(y=..scaled.., colour = group), alpha = 0, lwd = 2) + geom_vline(data=avgs, aes(xintercept=energy, colour = group), linetype="dashed", size=1) +theme_bw() + scale_colour_brewer(palette = "Accent") + scale_fill_brewer(palette = "Accent") + ylab("Scaled Density") + xlab("Value 0-1")
+
+```
+
+
+## GOAL 3: MAKE A RECOMMENDATION SYSTEM BASED ON MUSIC METRICS **AND** LYRICS **AND** TIME
+### LET'S SEE IF PEOPLE WHO SAY THEY LOVE MUSIC BECAUSE OF THE LYRICS ARE LYING
+
+Curated playlists already exists and some, like Spotify's, are pretty good. But when people make recommendation systems the recommended songs are mostly based on what the app thinks are similar bands (i.e. Spotify's "Related Artist section") or the metrics extracted above measuring QUALITIES of the MUSIC. That works well enough. But we all know that person who thinks, "Lyrics and singing, on the other hand, are music's greatest deal-breakers" ( [Thompson, 2013](https://www.npr.org/sections/allsongs/2013/05/29/187168874/the-good-listener-whats-more-important-lyrics-or-music)). So what I'd like to do is create a recommendation system that takes both the metrics AND the lyrics into account as well as a user's 24-h listening history.
+
+All of this is just the start. The terminal goals are to interface with **Last FM** and then use the lyrical content of the uploaded playlist to generate a playlist with similar content via mchine learning. This will require creating another dataset of songs, all with their metrics and lyrical conent scored and then finding the songs in a similar 2D space (or other). A t-SNE algorithm would be useful here. 
+
+Additionally since we're already interfaced with **Last FM** we can ping data at intervals to get scrobbing data over time (i.e. daily listening history we can break up into 4h bins). We can then look at patterns in 24-h listening history to see if there are circadian patterns of listening (i.e. are you big into ambient at breakfast and hard rock at work?) in order to potentially curate multiple playlists depending on time of day. In an environment where personalization is the moneymaker, this would be the logical next step for streaming services.
+
+
